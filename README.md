@@ -19,3 +19,9 @@ Como as análises propostas na tarefa original são em sua maioria sobre resulta
 ## Dependências
 
 R, com os pacotes `tidyverse`, `lubridate` e `here`.
+
+## Links para os laboratórios
+
+[Laboratório 02 check point 4](http://rpubs.com/francinaldo/fpcc2Lab2Ck4)
+[Laboratório 03 check point 1](http://rpubs.com/francinaldo/fpcc2-lab3-cp1)
+

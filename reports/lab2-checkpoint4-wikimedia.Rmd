@@ -1,0 +1,230 @@
+---
+title: "Lab2-checkpoint-4"
+author: "Francinaldo"
+date: "26 de abril de 2018"
+output: html_document
+---
+
+
+# Laboratório 2 - Checkpoint 4
+
+## Descrição da tafera
+
+  Utilizando os dados fornecidos pela Wikimedia Discovery criar um **relatório reproduzível**\* respondendo as seguintes perguntas:
+  
+  **1.** Qual é a nossa taxa de cliques geral diária? Como isso varia entre os grupos?
+  **2.** Quais resultados as pessoas tendem a tentar primeiro? Como isso muda no dia-a-dia?
+  **3.** Qual é a nossa taxa diária de resultados zero no geral? Como isso varia entre os grupos?
+  **4.** A duração da sessão é aproximadamente o tempo entre o primeiro e o último evento de uma sessão. Escolha uma variável do conjunto de dados e descreva sua relação com o tamanho da sessão. Visualize o relacionamento.
+  
+  **5.** Resumir as descobertas em um resumo executivo e postar no RPubs.
+
+## Dados
+
+  O conjunto de dados vem de um [esquema de rastreamento](https://meta.wikimedia.org/wiki/Schema:TestSearchSatisfaction2) que foi usado para avaliar a satisfação do usuários. Esse esquema contém as seguintes variáveis
+ 
+
+| Variável        |  Valor  |  Descrição                                                                                    |
+|:----------------|:--------|:----------------------------------------------------------------------------------------------|
+| uuid            | string  | Identificador universalmente exclusivo (UUID) para tratamento de eventos de backend.          |
+| timestamp       | integer | data e hora (UTC) do evento, formatadas como YYYYMMDDhhmmss.                                  |
+| session_id      | string  | Um ID exclusivo que identifica sessões individuais.                                           |
+| group           | string  | A label ("a" or "b").                                                                         |
+| action          | string  | Identifica em qual o evento foi criado. Ver abaixo.                                           |
+| checkin         | integer | Por quantos segundos a página foi aberta.                                                     |
+| page_id         | string  | Um identificador exclusivo para correlacionar visitas de páginas e check-ins.                 |
+| n_results       | integer | Número de ocorrências retornadas ao usuário. Exibido apenas para eventos searchResultPage.    |
+| result_position | integer | A posição do link da página visitada na página de resultados do mecanismo de pesquisa (SERP). |
+
+
+Possíveis valores para o campo de ação de um evento:
+
+- **searchResultPage** : quando uma nova pesquisa é executada e o usuário é mostrado em uma SERP.
+- **visitPage** : quando o usuário clica em um link nos resultados.
+- **checkin** : quando o usuário permanece na página por um período de tempo previamente especificado.
+
+## Exemplo de uma sessão
+
+|uuid                             |      timestamp|session_id       |group |action           | checkin|page_id          | n_results| result_position|
+|:--------------------------------|:--------------|:----------------|:-----|:----------------|-------:|:----------------|---------:|---------------:|
+|4f699f344515554a9371fe4ecb5b9ebc | 20160305195246|001e61b5477f5efc |b     |searchResultPage |      NA|1b341d0ab80eb77e |         7|              NA|
+|759d1dc9966353c2a36846a61125f286 | 20160305195302|001e61b5477f5efc |b     |visitPage        |      NA|5a6a1f75124cbf03 |        NA|               1|
+|77efd5a00a5053c4a713fbe5a48dbac4 | 20160305195312|001e61b5477f5efc |b     |checkin          |      10|5a6a1f75124cbf03 |        NA|               1|
+|42420284ad895ec4bcb1f000b949dd5e | 20160305195322|001e61b5477f5efc |b     |checkin          |      20|5a6a1f75124cbf03 |        NA|               1|
+|8ffd82c27a355a56882b5860993bd308 | 20160305195332|001e61b5477f5efc |b     |checkin          |      30|5a6a1f75124cbf03 |        NA|               1|
+|2988d11968b25b29add3a851bec2fe02 | 20160305195342|001e61b5477f5efc |b     |checkin          |      40|5a6a1f75124cbf03 |        NA|               1|
+
+  A consulta da pesquisa deste usuário retornou 7 resultados, eles clicaram no primeiro resultado e permaneceram na página entre 40 e 50 segundos. (O próximo check-in teria acontecido aos 50 segundos).
+
+
+
+## Iniciando a análise exploratória
+
+
+### Carregando as bibliotecas necessárias à execução da tarefa
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+library(lubridate)
+theme_set(theme_bw())
+```
+
+### Importando os dados
+
+```{r ETL}
+buscas = read_csv(here::here("data/search_data.csv"))
+```
+
+
+```{r}
+buscas = buscas %>% 
+    group_by(session_id) %>% 
+    arrange(session_start_timestamp) %>% 
+    mutate(search_index = cumsum(results), # contador de buscas na sessão.
+    date = as_date(ymd_hms(session_start_timestamp))) %>%
+    ungroup()
+```
+
+    
+##### Perqunta 1 #####
+
+  1. Qual é a nossa taxa de cliques geral diária? Como isso varia entre os grupos?
+
+
+```{r}
+buscas %>% 
+    group_by(group) %>% 
+    summarise(n = n()) %>% 
+    ggplot(aes(x = group, y = n, fill = group)) +
+    geom_col() +
+    ggtitle("Figura 1.1 - Quantidade de buscas por grupo") +
+    labs(x="Grupos",y="Buscas")
+```
+
+```{r}
+txClik <- buscas %>%
+  filter(results >= 1, na.exclude(results)) %>%
+  group_by(date, num_clicks) %>%
+  summarise(n = n()) %>% 
+  mutate(txClik = n / sum(n) * 100)
+
+txClik %>% 
+  filter(num_clicks > 0) %>%
+  ggplot(aes(x = date, y = txClik, fill = cut(date, breaks = 8))) +
+  geom_col() +
+  ggtitle("Figura 1.2 - Taxa Geral de cliques diária para números de cliques > 0") +
+  labs(x = "", y = "Taxa de cliques maiores que zero(%)", fill = "Datas")
+```
+
+
+```{r}
+GtxClik <- buscas %>%
+  filter(results >= 1, na.exclude(results)) %>%
+  group_by(group, date, num_clicks) %>%
+  summarise(n = n()) %>% 
+  mutate(GtxClik = n / sum(n) * 100)
+
+GtxClik %>% 
+  filter(num_clicks > 0) %>%
+  ggplot(aes(x = date, y = GtxClik, fill = cut(date, breaks = 8))) +
+  geom_col() +
+  facet_wrap(~group) +
+  ggtitle("Figura 1.3 - Taxa de cliques diária por Grupo, para númeors de cliques > 0") +
+  labs(x = "", y = "Taxa de cliques maiores que zero(%)", fill = "Datas")
+```
+
+    Verifica-se,na Figura 1.2, que a taxa geral de clicks diferentes de zero está entre 30% e 40% por dia. 
+    Quando separamos por grupo verifica-se, com o auxílio da Figura 1.3, que a taxa de cliques diária do grupo "b" é menor que a do grupo "a". O grupo "a" se mantém na mesma faixa da taxa geral enquando no grupo "b" há uma variação entre 15% a pouco mais de 20%.
+
+    
+
+##### Pergunta 2 #####
+  
+  2. Quais resultados as pessoas tendem a tentar primeiro? Como isso muda no dia-a-dia?
+
+
+```{r warning=FALSE}
+buscas %>% 
+  na.omit(first_click) %>%
+  ggplot(aes(x = first_click)) +
+  geom_histogram(bins = 10) +
+  scale_x_log10() +
+  ggtitle("Figura 2.1 - Distribuição da frequência do primeiro clik nos links de busca") +
+  labs(x = "Índice do Primeiro Click",y = "Número de cliques") 
+```
+
+```{r warning=FALSE}
+buscas %>% 
+  na.omit(first_click) %>%
+  ggplot(aes(x = first_click)) +
+  geom_histogram(bins = 10) +
+  scale_x_log10() +
+  facet_wrap(~ date) +
+  ggtitle("Figura 2.2 - Distribuição diária da frequência do primeiro clik nos links de busca") +
+  labs(x = "Índice do Primeiro Click",y = "Quantidade de cliques") 
+```
+     
+      Da Figura 2.1 pode-se verificar que as pessoas tendem a clicar nos primeiros resultados. No dia-a-dia, Figura 2.2, verifica-se o mesmo comportamento geral, os primeiros resultados são os mais clicados.
+
+    
+##### Pergunta 3 ######
+
+  3. Qual é a nossa taxa diária de resultados zero no geral? Como isso varia entre os grupos?
+
+```{r}
+buscas %>% 
+    mutate(resultados = ifelse(results > 0, "Result >= 1", "Result = 0")) %>%
+    count(resultados) %>%
+    ggplot(aes(x = resultados, y = n , fill = resultados)) +
+    geom_col() +
+    geom_text(aes(label=sprintf("%0.2f%%",(n/nrow(buscas)) * 100)), vjust=1.5 , hjust=0.5) +
+    ggtitle("Figura 3.1 - Distribuição dos resultados zero (Dia)") +
+    labs(x = "Buscas",y = "Número de Resultados", fill = "Buscas")
+```
+
+```{r}
+buscas %>% 
+    group_by(group) %>%
+    mutate(resultados = ifelse(results > 0, "Result >= 1", "Result = 0")) %>%
+    count(resultados) %>%
+    ggplot(aes(x = resultados, y = n , fill = resultados)) +
+    geom_col() +
+    facet_wrap(~group) +
+    geom_text(aes(label=sprintf("%0.2f%%",(n/nrow(buscas)) * 100)), vjust=2 , hjust=0.5) +
+    ggtitle("Figura 3.2 - Distribuição dos Resultados Zero (Grupos)") +
+    labs(x = "Buscas",y = "Número de Resultados", fill = "Buscas")
+```
+
+```{r}
+buscas %>% 
+    group_by(date)%>%
+    mutate(resultados = ifelse(results > 0, "Result >= 1", "Result = 0")) %>%
+    count(resultados) %>%
+    ggplot(aes(x = resultados, y = n , fill = resultados)) +
+    geom_col() +
+    facet_wrap(~ date) +
+    geom_text(aes(label=sprintf("%0.2f%%",(n/nrow(buscas)) * 100)), vjust=1.5 , hjust=0.5) +
+    ggtitle("Figura 3.3 - Distribuição dos resultados zero (Dia)") +
+    labs(x = "Buscas",y = "Número de Resultados", fill = "Buscas")
+```
+
+      Conforme pode ser verificado na Figura 3.1, a taxa geral de resultados zero é de aproximadamente 18% para os dois grupos. 
+      A taxa de resultados zero por grupo, Figura 3.2, mantém a mesma proporção.
+
+    
+##### Pergunta 4 #####
+
+  4. A duração da sessão é aproximadamente o tempo entre o primeiro e o último evento de uma sessão. Escolha uma variável do conjunto de dados e descreva sua relação com o tamanho da sessão. Visualize o relacionamento.
+
+
+```{r warning=FALSE}
+buscas %>%
+    filter(session_time != -Inf, first_click <= 50) %>%
+    ggplot(aes(x = first_click, y = session_time, color=group)) +
+    geom_point(alpha = .5, size = 2) +
+    ggtitle("Figura 4.1 - Índice do click vs Duração da seção") +
+    labs(x = "Índice do click",y = "Duração da seção (seg)", color = "Grupo") 
+```
+
+      Podemos visualizar, na Figura 4.1, uma relação entre a duração da seção e o índice do primeiro click. Quando o primeiro click foi nos primeiros resultados(índices menores que 20) verifica-se que a duração da seção é maior que o primeiro click nos demais índices(maiores que 20).

@@ -1,0 +1,543 @@
+---
+title: "Lab3-cp-1"
+author: "Francinaldo"
+date: "15 de maio de 2018"
+output: html_document
+---
+
+# Laboratório 3 - Checkpoint 1
+
+De fato, os dados de acesso a projetos da wikimedia que utilizamos no problema 2 são dados de uma amostra dos usuários, e não da população.
+
+Sabendo disso, produza uma versão resumida do relatório que você fez para o Lab 2, CP 4, que:
+
+1. responde as 3 primeiras perguntas da tarefa original utilizando inferência estatística realizada através de intervalos de confiança e bootstrap.
+
+2. testa o que acontece se para a pergunta 1, em vez de comparar o grupo A com o grupo B (um teste A/B), você compara metade das sessões do grupo A (escolhida aleatoriamente) com outra metade das sessões do mesmo grupo (um teste A/A).
+
+Ressalte em seu relatório a conclusão possível sobre a população que você está fazendo a partir da inferência.  Lembre de escrever uma frase com o vocabulário do domínio do problema explicando seu achado, e de formalizá-la em nível de confiança. Comente tanto significância (estatística) quanto relevância prática de diferenças que você venha a encontrar. 
+
+
+# Variáveis utilizadas
+
+
+
+### Carregando as bibliotecas necessárias à execução da tarefa
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+library(lubridate)
+library(crayon)
+library(boot) 
+theme_set(theme_bw())
+```
+
+
+### Importando os dados
+
+```{r ETL}
+buscas = read_csv(here::here("data/search_data.csv"))
+```
+
+
+```{r}
+buscas = buscas %>% 
+    group_by(session_id) %>% 
+    arrange(session_start_timestamp) %>% 
+    mutate(search_index = cumsum(results), # contador de buscas na sessão.
+    date = as_date(ymd_hms(session_start_timestamp))) %>%
+    ungroup()
+```
+
+
+##### Perqunta 1 #####
+
+    1. Qual é a nossa taxa de cliques geral diária? Como isso varia entre os grupos?
+
+```{r}
+buscas %>% 
+  group_by(date) %>%
+  ggplot(aes(x = date, y = num_clicks*100, fill = cut(date, breaks = 8))) +
+  stat_summary(fun.y=mean,geom="col") +
+  stat_summary(fun.data=mean_cl_normal, geom="errorbar") +
+  ggtitle("Figura 1.1 - Taxa de cliques diária") +
+  labs(x = "", y = "Taxa de cliques", fill = "Datas")
+```
+
+
+```{r}
+buscas %>% 
+  group_by(date) %>%
+  ggplot(aes(x = date, y = num_clicks*100, fill = cut(date, breaks = 8))) +
+  stat_summary(fun.y=mean,geom="col") +
+  stat_summary(fun.data=mean_cl_normal, geom="errorbar") +
+#  stat_summary(fun.y=mean, geom="line",aes(group=""),linetype="dashed") +
+  facet_wrap(~group) +
+  ggtitle("Figura 1.2 - Taxa de cliques diária por gupos") +
+  labs(x = "", y = "Taxa de cliques", fill = "Datas")
+```
+
+```{r}
+# Taxa de cliques geral
+txCliques <- buscas %>%
+  group_by(date) %>%
+  summarise(cliques = sum(num_clicks), n = n(), t_cliques = (cliques/n)*100)
+
+# Taxa de cliques para o grupo "a"
+txCliquesGa <- buscas %>%
+  group_by(group, date) %>%
+  filter(group == "a") %>%
+  summarise(cliques = sum(num_clicks), n = n(), txga_cliques = (cliques/n)*100)
+
+# Taxa de cliques para o grupo "b"
+txCliquesGb <- buscas %>%
+  group_by(group, date) %>%
+  filter(group == "b") %>%
+  summarise(cliques = sum(num_clicks), n = n(), txgb_cliques = (cliques/n)*100)
+
+# Diferença das taxas de cliques (a - b)
+
+
+```
+
+
+```{r}
+# Função para cálculo da média
+media <- function(amostra, indices) {
+    mean(amostra[indices])
+}
+
+# Intervalo de Confiaça - geral
+boot.txCliques <- boot(data = txCliques$t_cliques, 
+                 statistic = media, 
+                 R = 2000)
+cat(red$bold("INTERVALO DE CONFIANÇA - GERAL\n"))
+boot.ci(boot.out = boot.txCliques, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - grupo "a"
+boot.txCliquesGa <- boot(data = txCliquesGa$txga_cliques, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - GRUPO 'a'\n"))
+boot.ci(boot.out = boot.txCliquesGa, conf = 0.95, type = "basic")
+
+# Intervalo de Confiança - grupo "b"
+boot.txCliquesGb <- boot(data = txCliquesGb$txgb_cliques, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - GRUPO 'b'\n"))
+boot.ci(boot.out = boot.txCliquesGb, conf = 0.95, type = "basic")
+```
+
+    Utilizado-se dos intervalos de confiança acima podemos inferir, com 95% do confiança, que a taxa média de cliques diária está entre 26,22% e 32.79%. Se separarmos a análise por grupo e as comparármos veriricamos que o grupo "a" tem uma taxa de cliques diária superior ao grupo "b". Com o auxílio das Figuras 1.1 e 1.2, podemos visualizar a diferença na taxa de cliques diária entre os grupos.
+    
+
+##### Pergunta 2 #####
+  
+    2. Quais resultados as pessoas tendem a tentar primeiro? Como isso muda no dia-a-dia?
+
+
+
+```{r warning=FALSE}
+buscas %>% 
+  na.omit(first_click) %>%
+  ggplot(aes(x = first_click)) +
+  geom_histogram(bins = 10) +
+  scale_x_log10() +
+  ggtitle("Figura 2.1 - Distribuição da frequência do primeiro clik nos links de busca") +
+  labs(x = "Índice do Primeiro Click",y = "Número de cliques") 
+```
+
+```{r warning=FALSE}
+buscas %>% 
+  na.omit(first_click) %>%
+  ggplot(aes(x = first_click)) +
+  geom_histogram(bins = 10) +
+  scale_x_log10() +
+  facet_wrap(~ date) +
+  ggtitle("Figura 2.2 - Distribuição diária da frequência do primeiro clik nos links de busca") +
+  labs(x = "Índice do Primeiro Click",y = "Quantidade de cliques") 
+```
+     
+    Da Figura 2.1 pode-se verificar que as pessoas tendem a clicar nos primeiros resultados. No dia-a-dia, Figura 2.2, verifica-se o mesmo comportamento geral, os primeiros resultados são os mais clicados.
+    Objetivando confirmar os resultados acima verificaremos os dados através do intervalo de confiança.
+  
+
+```{r}
+# Primeiro clique - geral
+firstClique <- buscas %>%
+  filter(!is.na(first_click)) 
+
+# Primeiro clique - por dia
+firstCliqueD <- buscas %>%
+  filter(!is.na(first_click)) %>%
+  group_by(date) 
+
+# Primeiro clique - dia 01
+firstCliqueD1 <- firstCliqueD %>%
+  filter(date == "2016-03-01")
+
+# Primeiro clique - dia 02
+firstCliqueD2 <- firstCliqueD %>%
+  filter(date == "2016-03-02")
+
+# Primeiro clique - dia 03
+firstCliqueD3 <- firstCliqueD %>%
+  filter(date == "2016-03-03")
+
+# Primeiro clique - dia 04
+firstCliqueD4 <- firstCliqueD %>%
+  filter(date == "2016-03-04")
+
+# Primeiro clique - dia 05
+firstCliqueD5 <- firstCliqueD %>%
+  filter(date == "2016-03-05")
+
+# Primeiro clique - dia 06
+firstCliqueD6 <- firstCliqueD %>%
+  filter(date == "2016-03-06")
+
+# Primeiro clique - dia 07
+firstCliqueD7 <- firstCliqueD %>%
+  filter(date == "2016-03-07")
+
+# Primeiro clique - dia 08
+firstCliqueD8 <- firstCliqueD %>%
+  filter(date == "2016-03-08")
+```
+
+
+```{r}
+set.seed(2018)
+
+# Função para cálculo da média
+media <- function(amostra, indices) {
+    mean(amostra[indices])
+}
+
+# Intervalo de Confiaça - geral
+res.bootG <- boot(data = firstClique$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE (GERAL)\n"))
+boot.ci(boot.out = res.bootG, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 01
+dia01 <- boot(data = firstCliqueD1$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-01)\n"))
+boot.ci(boot.out = dia01, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 02
+dia02 <- boot(data = firstCliqueD2$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-02)\n"))
+boot.ci(boot.out = dia02, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 03
+dia03 <- boot(data = firstCliqueD3$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-03)\n"))
+boot.ci(boot.out = dia03, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 04
+dia04 <- boot(data = firstCliqueD4$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-04)\n"))
+boot.ci(boot.out = dia04, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 05
+dia05 <- boot(data = firstCliqueD5$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-05)\n"))
+boot.ci(boot.out = dia05, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 06
+dia06 <- boot(data = firstCliqueD6$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-06)\n"))
+boot.ci(boot.out = dia06, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 07
+dia07 <- boot(data = firstCliqueD7$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-07)\n"))
+boot.ci(boot.out = dia07, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - dia 08
+dia08 <- boot(data = firstCliqueD8$first_click, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - PRIMEIRO CLIQUE - (DIA 2016-03-08)\n"))
+boot.ci(boot.out = dia08, conf = 0.95, type = "basic")
+```
+
+```{r}
+ic_dia <- data.frame(dias=(as.Date(c('2016-03-01','2016-03-02','2016-03-03','2016-03-04','2016-03-05','2016-03-06','2016-03-07','2016-03-08'))), cimin=c(2.457,2.304,2.794,6.054,2.310,2.149,2.504,2.715),cimax=c(10.660,2.729,3.396,8.552,2.583,3.192,2.979,3.295))
+
+ic_dia %>%
+  group_by(dias)%>%
+  ggplot(aes(x = dias, y = NULL ,  color = cut(dias, breaks = 8))) +
+  geom_errorbar(aes(ymin = cimin, ymax = cimax), width = .2) +
+  ggtitle("Figura 2.3 - Distribuição diária da frequência do primeiro clik nos links de busca") +
+  labs(x = "Dias",y = "Primeiro clique", color = "Dias")
+```
+
+
+    Pelos resultados obtidos através do cálculo dos intervalos de confiança podemos inferir, com 95% do confiança, que as pessoas, de forma geral, tendem a clicar nos primeiros links de busca IC[3.302, 4.434]. Quando analisamos os resultado por dia percebemos, mesmo com algumas variações no intervalo de confiaça, que os primeiros resultados das buscas também são os mais clicados (Figura 2.3).
+    
+    
+
+##### Pergunta 3 ######
+
+    3. Qual é a nossa taxa geral diária de resultados zero? Como isso varia entre os grupos?
+
+```{r}
+buscas %>% 
+    mutate(resultados = ifelse(results > 0, "Result >= 1", "Result = 0")) %>%
+    count(resultados) %>%
+    ggplot(aes(x = resultados, y = n , fill = resultados)) +
+    geom_col() +
+    geom_text(aes(label=sprintf("%0.2f%%",(n/nrow(buscas)) * 100)), vjust=1.5 , hjust=0.5) +
+    ggtitle("Figura 3.1 - Distribuição dos resultados zero (Dia)") +
+    labs(x = "Buscas",y = "Número de Resultados", fill = "Buscas")
+```
+
+```{r}
+buscas %>% 
+    group_by(group) %>%
+    mutate(resultados = ifelse(results > 0, "Result >= 1", "Result = 0")) %>%
+    count(resultados) %>%
+    ggplot(aes(x = resultados, y = n , fill = resultados)) +
+    geom_col() +
+    facet_wrap(~group) +
+    geom_text(aes(label=sprintf("%0.2f%%",(n/nrow(buscas)) * 100)), vjust=2 , hjust=0.5) +
+    ggtitle("Figura 3.2 - Distribuição dos Resultados Zero (Grupos)") +
+    labs(x = "Buscas",y = "Número de Resultados", fill = "Buscas")
+```
+
+```{r}
+buscas %>% 
+    group_by(date, group)%>%
+    mutate(resultados = ifelse(results > 0, "Result >= 1", "Result = 0")) %>%
+    count(resultados) %>%
+    ggplot(aes(x = resultados, y = n , fill = resultados)) +
+    geom_col() +
+    facet_grid(group ~ date) +
+    geom_text(size = 3, aes(label=sprintf("%0.2f%%",(n/nrow(buscas)) * 100)), vjust=1.5 , hjust=0.5) +
+    theme(axis.text.x = element_blank(), legend.position="top", 
+          legend.text = element_text(colour="black", 
+          size = 8 )) +
+    ggtitle("Figura 3.3 - Distribuição dos resultados zero (Dia por Grupo)") +
+    labs(x = "Buscas",y = "Número de Resultados", fill = "Buscas")
+```
+
+      Conforme pode ser verificado na Figura 3.1, a taxa geral de resultados zero é de aproximadamente 18% para os dois grupos. 
+      Quando verificada por grupo a taxa de resultados zero, Figura 3.2, mantém a mesma proporção. Se separarmos por dia e compararmos a taxa de resultados zero por grupo, Figura 3.3, verificamos que a taxa entre os grupos se mantém durante os dias.
+      
+  
+## Utilizando intervalo de confiança para verificar a conclusão tirada da visualização acima.   
+ 
+```{r}
+set.seed(2018)
+
+# Função para taxa de resultado zero
+fun.txz_result <- function(amostra, indices) {
+  
+  tx_zresult <- amostra %>%
+    slice(indices) %>%
+    group_by(results) %>%
+    summarise(n = n()) %>% 
+    mutate(tx_zresult = n / sum(n) * 100)  %>%
+    ungroup()
+  
+  tx_zresult <- tx_zresult %>% 
+    filter(results == 0)
+  
+  return(tx_zresult$tx_zresult)
+}
+
+res.boot <- boot(data = buscas, 
+                 statistic = fun.txz_result, 
+                 R = 2000)
+cat(red$bold("INTERVALO DE CONFIANÇA - RESULTADO ZERO (GERAL)\n"))
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+
+# Função para taxa de resultado zero - grupos
+fun.txzG_result <- function(amostra, indices) {
+  
+  txG_zresult <- amostra %>%
+    slice(indices) %>%
+    group_by(group,results) %>%
+    summarise(n = n()) %>% 
+    mutate(txG_zresult = n / sum(n) * 100)  %>%
+    ungroup()
+  
+  txGa_zresult <- txG_zresult %>% 
+    filter(results == 0, group == 'a') %>%
+    pull(txG_zresult)
+
+  return(txGa_zresult)
+}
+res.boot <- boot(data = buscas, 
+                 statistic = fun.txzG_result, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - RESULTADO ZERO (Grupo a)\n"))
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+
+
+# Função para taxa de resultado zero - grupos
+fun.txzG_result <- function(amostra, indices) {
+  
+  txG_zresult <- amostra %>%
+    slice(indices) %>%
+    group_by(group,results) %>%
+    summarise(n = n()) %>% 
+    mutate(txG_zresult = n / sum(n) * 100)  %>%
+    ungroup()
+  
+  txGb_zresult <- txG_zresult %>% 
+    filter(results == 0, group == 'b') %>%
+    pull(txG_zresult)
+  
+  
+  return(txGb_zresult)
+}
+res.boot <- boot(data = buscas, 
+                 statistic = fun.txzG_result, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - RESULTADO ZERO (Grupo b)\n"))
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+```      
+
+      Utilizando-se do IC podemos verificar, com 95% de confiança, que a taxa de resultados zero é muito similar entre os grupos.
+
+
+
+
+##### Perqunta 4 #####
+
+    4. Testar o que acontece se para a pergunta 1 (Qual é a taxa de cliques geral diária?), em vez de comparar o grupo A com o grupo B (um teste A/B), você compara metade das sessões do grupo A (escolhida aleatoriamente) com outra metade das sessões do mesmo grupo (um teste A/A).
+
+
+```{r}
+set.seed(2018)
+
+buscasA <- buscas %>%
+  group_by(group) %>%
+  filter(group == "a")
+```
+
+
+```{r}
+buscasA %>% 
+  group_by(date) %>%
+  ggplot(aes(x = date, y = num_clicks*100, fill = cut(date, breaks = 8))) +
+  stat_summary(fun.y=mean,geom="col") +
+  stat_summary(fun.data=mean_cl_normal, geom="errorbar") +
+  ggtitle("Figura 1.1 - Taxa de cliques diária") +
+  labs(x = "", y = "Taxa de cliques", fill = "Datas")
+```
+
+```{r}
+set.seed(2018)
+
+  amostra1 = sample_frac(buscasA, 1/2, replace = FALSE) %>%
+    mutate(grupo = "a1")
+  
+  amostra2 = sample_frac(buscasA, 1/2, replace = FALSE) %>%
+    mutate(grupo = "a2")
+  
+  amostrasAA <- bind_rows(amostra1,amostra2)
+  
+```
+
+
+```{r}
+amostrasAA %>% 
+  group_by(date) %>%
+  ggplot(aes(x = date, y = num_clicks*100, fill = cut(date, breaks = 8))) +
+  stat_summary(fun.y=mean,geom="col") +
+  stat_summary(fun.data=mean_cl_normal, geom="errorbar") +
+#  stat_summary(fun.y=mean, geom="line",aes(group=""),linetype="dashed") +
+  facet_wrap(~grupo) +
+  ggtitle("Figura 1.2 - Taxa de cliques diária por gupos") +
+  labs(x = "", y = "Taxa de cliques", fill = "Datas")
+```
+
+
+
+```{r}
+# Taxa de cliques geral
+txCliques_AA <- amostrasAA %>%
+  group_by(date) %>%
+  summarise(cliques = sum(num_clicks), n = n(), t_cliques = (cliques/n)*100)
+
+# Taxa de cliques para o grupo "a1"
+txCliques_A1 <- amostrasAA %>%
+  group_by(grupo, date) %>%
+  filter(grupo == "a1") %>%
+  summarise(cliques = sum(num_clicks), n = n(), txA1_cliques = (cliques/n)*100)
+
+# Taxa de cliques para o grupo "a2"
+txCliques_A2 <- amostrasAA %>%
+  group_by(grupo, date) %>%
+  filter(grupo == "a1") %>%
+  summarise(cliques = sum(num_clicks), n = n(), txA2_cliques = (cliques/n)*100)
+```
+
+
+```{r}
+set.seed(2018)
+
+# Função para cálculo da média
+media <- function(amostra, indices) {
+    mean(amostra[indices])
+}
+
+# Intervalo de Confiaça - geral
+res.boot <- boot(data = txCliques_AA$t_cliques, 
+                 statistic = media, 
+                 R = 2000)
+cat(red$bold("INTERVALO DE CONFIANÇA - GERAL a/a\n"))
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+
+# Intervalo de Confiaça - grupo "a1"
+res.boot <- boot(data = txCliques_A1$txA1_cliques, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - GRUPO 'a1'\n"))
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+
+# Intervalo de Confiança - grupo "a2"
+res.boot <- boot(data = txCliques_A2$txA2_cliques, 
+                 statistic = media, 
+                 R = 2000)
+cat("\n")
+cat(red$bold("INTERVALO DE CONFIANÇA - GRUPO 'a2'\n"))
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+```
+
+    Comparando os intervalos de confiança das duas amostras geradas, sem reposição, dento do grupo "a" podemos inferir, com 95% de confiança, que não existe diferenças entre as médias das taxas de cliques diárias das duas amostras.
+
